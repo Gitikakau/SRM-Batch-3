@@ -2,101 +2,93 @@ pipeline {
     agent any
 
     environment {
-        dockerRegistry = 'https://index.docker.io/v1/'
-        dockerCreds = credentials('dockerhub-credentials')
-        backendImage = 'fullstack-backend'
-        frontendImage = 'fullstack-frontend'
+        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'  // ID for Docker credentials
+        BACKEND_IMAGE_NAME = 'fullstack-backend'
+        FRONTEND_IMAGE_NAME = 'fullstack-frontend'
+        DOCKER_TAG = "latest"
+
+        // Credentials stored in Jenkins for secure use
+        JWT_SECRET = credentials('JWT_Secret')      // ID for JWT secret
+        MONGODB_URL = credentials('mongodb_url')    // ID for MongoDB URL
+        PORT = credentials('PORT')                  // ID for Port
     }
 
-      
     stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Gitikakau/SRM-Batch-3.git'
+            }
+        }
 
-         stage('Check .env File') {
+        stage('Create .env File') {
             steps {
                 script {
-                    def envFilePath = 'C://ProgramData//Jenkins//.jenkins//workspace//erp pipeline//backend//.env'
-                    if (fileExists(envFilePath)) {
-                        echo "The .env file exists. Reading file..."
+                    // Create the .env file with sensitive data
+                    writeFile file: 'backend/.env', text: """
+                    PORT=${PORT}
+                    JWT_SECRET=${JWT_SECRET}
+                    MONGODB_URL=${MONGODB_URL}
+                    """
+                }
+            }
+        }
+
+        stage('Build Backend Docker Image') {
+            steps {
+                script {
+                    dockerImageBackend = docker.build("${env.BACKEND_IMAGE_NAME}:${env.DOCKER_TAG}", "./backend")
+                }
+            }
+        }
+
+        stage('Build Frontend Docker Image') {
+            steps {
+                script {
+                    dockerImageFrontend = docker.build("${env.FRONTEND_IMAGE_NAME}:${env.DOCKER_TAG}", "./client")
+                }
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', "${env.DOCKER_CREDENTIALS_ID}") {
+                        echo "Successfully logged in to Docker Hub"
+                    }
+                }
+            }
+        }
+
+        stage('Push Backend Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', "${env.DOCKER_CREDENTIALS_ID}") {
+                        dockerImageBackend.push("${env.DOCKER_TAG}")
+                    }
+                }
+            }
+        }
+
+        stage('Push Frontend Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', "${env.DOCKER_CREDENTIALS_ID}") {
+                        dockerImageFrontend.push("${env.DOCKER_TAG}")
+                    }
+                }
+            }
+        }
+
+        stage('Post-build Cleanup') {
+            steps {
+                script {
+                    // Remove local Docker images after pushing to Docker Hub
+                    if (isUnix()) {
+                        sh "docker rmi ${env.BACKEND_IMAGE_NAME}:${env.DOCKER_TAG} || true"
+                        sh "docker rmi ${env.FRONTEND_IMAGE_NAME}:${env.DOCKER_TAG} || true"
                     } else {
-                        error "The .env file does not exist at path: ${envFilePath}"
-                    }
-                }
-            }
-        }
-        stage('Load Environment Variables') {
-            steps {
-                script {
-                    def envFilePath = 'C://ProgramData//Jenkins//.jenkins//workspace//erp pipeline//backend//.env'
-                    if (fileExists(envFilePath)) {
-                        def envContent = readFile(envFilePath)
-                        def envVars = envContent.split('\n').collect { line ->
-                            if (line.trim()) {
-                                def parts = line.split('=')
-                                def key = parts[0].trim()
-                                def value = parts[1].trim()
-                                return "${key}=${value}"
-                            }
-                        }.findAll { it != null }
-                        withEnv(envVars) {
-                            // Your steps that require the environment variables
-                            echo "Environment variables loaded: ${envVars}"
-                            // Place your other steps here
-                        }
-                    } else {
-                        error "The .env file does not exist at path: ${envFilePath}"
-                    }
-                }
-            }
-        }
-        
-
-        stage('Build Backend') {
-            steps {
-                script {
-                    def backendPath = 'backend'
-                    if (fileExists(backendPath)) {
-                        echo "Building backend image"
-                        bat "docker build -t ${backendImage}:latest ${backendPath}" // Build the image
-                        bat "docker tag ${backendImage} gitika14/fullstack-backend:fullstack-backend" // Tag image
-                    } else {
-                        error "Backend directory not found"
-                    }
-                }
-            }
-        }
-
-        stage('Build Frontend') {
-            steps {
-                script {
-                    def frontendPath = 'client'
-                    if (fileExists(frontendPath)) {
-                        echo "Building frontend image"
-                        bat "docker build -t ${frontendImage}:latest ${frontendPath}" // Build the image
-                        bat "docker tag ${frontendImage} gitika14/fullstack-frontend:fullstack-frontend" // Tag image
-                    } else {
-                        error "Frontend directory not found"
-                    }
-                }
-            }
-        }
-
-        stage('Push Backend') {
-            steps {
-                script {
-                    echo "Preparing to push backend image"
-                    docker.withRegistry(dockerRegistry, "dockerhub-credentials") {
-                        bat "docker push gitika14/fullstack-backend:${backendImage}"
-                    }
-                }
-            }
-        }
-
-        stage('Push Frontend') {
-            steps {
-                script {
-                    echo "Preparing to push frontend image"
-                    docker.withRegistry(dockerRegistry, "dockerhub-credentials") {
-                        bat "docker push gitika14/fullstack-frontend:${frontendImage}"
+                        bat "docker rmi ${env.BACKEND_IMAGE_NAME}:${env.DOCKER_TAG} || ver > nul"
+                        bat "docker rmi ${env.FRONTEND_IMAGE_NAME}:${env.DOCKER_TAG} || ver > nul"
                     }
                 }
             }
@@ -105,10 +97,13 @@ pipeline {
 
     post {
         always {
-            echo "PIPELINE SUCCESS"
+            cleanWs() // Clean workspace after every build
+        }
+        success {
+            echo 'Build and deployment successful! Docker images for both backend and frontend pushed to Docker Hub.'
         }
         failure {
-            echo "PIPELINE FAILED"
+            echo 'Build failed. Please check the logs and correct any issues.'
         }
     }
 }
