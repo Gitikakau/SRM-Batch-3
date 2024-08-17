@@ -23,7 +23,7 @@ pipeline {
         stage('Create .env File') {
             steps {
                 script {
-                    // Create the .env file with sensitive data
+                    // Create the .env file with sensitive data for the backend
                     writeFile file: 'backend/.env', text: """
                     PORT=${PORT}
                     JWT_SECRET=${JWT_SECRET}
@@ -62,9 +62,7 @@ pipeline {
         stage('Push Backend Docker Image') {
             steps {
                 script {
-                    docker.withRegistry('https://index.docker.io/v1/', "${env.DOCKER_CREDENTIALS_ID}") {
-                        dockerImageBackend.push("${env.DOCKER_TAG}")
-                    }
+                    dockerImageBackend.push("${env.DOCKER_TAG}")
                 }
             }
         }
@@ -72,9 +70,7 @@ pipeline {
         stage('Push Frontend Docker Image') {
             steps {
                 script {
-                    docker.withRegistry('https://index.docker.io/v1/', "${env.DOCKER_CREDENTIALS_ID}") {
-                        dockerImageFrontend.push("${env.DOCKER_TAG}")
-                    }
+                    dockerImageFrontend.push("${env.DOCKER_TAG}")
                 }
             }
         }
